@@ -1,0 +1,497 @@
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  .page { background: #daeeff; min-height: 100vh; padding: 20px; font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; }
+  .page-inner { width: 100%; max-width: 720px; }
+  h2 { font-size: 18px; font-weight: 500; color: #1a3a5c; margin-bottom: 14px; }
+
+  /* Excel 上傳區 */
+  .upload-area {
+    border: 2px dashed #7ab8e0; border-radius: 10px; background: #f0f8ff;
+    padding: 20px; text-align: center; cursor: pointer; margin-bottom: 12px;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .upload-area:hover, .upload-area.drag-active { background: #d8eeff; border-color: #1a7ac8; }
+  .upload-area input { display: none; }
+  .upload-icon { font-size: 32px; margin-bottom: 8px; }
+  .upload-title { font-size: 14px; font-weight: 500; color: #1a3a5c; margin-bottom: 4px; }
+  .upload-sub { font-size: 12px; color: #5a80a0; }
+  .upload-hint { font-size: 11px; color: #888; margin-top: 6px; }
+  .upload-status { font-size: 13px; margin-top: 8px; padding: 6px 12px; border-radius: 5px; display: none; }
+  .upload-status.ok { background: #d4f5e2; color: #1a5c3a; display: block; }
+  .upload-status.err { background: #fdecea; color: #8c1f1f; display: block; }
+
+  /* 預覽表格 */
+  .preview-wrap { margin-bottom: 12px; overflow-x: auto; display: none; }
+  .preview-wrap table { border-collapse: collapse; font-size: 12px; width: 100%; }
+  .preview-wrap th { background: #c2d8f0; color: #1a3a5c; padding: 4px 8px; border: 1px solid #a0c0e0; font-weight: 500; }
+  .preview-wrap td { padding: 4px 8px; border: 1px solid #d0e4f0; }
+  .preview-wrap tr:nth-child(even) td { background: #f0f8ff; }
+  .preview-title { font-size: 12px; color: #1a3a5c; font-weight: 500; margin-bottom: 4px; }
+
+  .btn { padding: 7px 14px; border: 1px solid #5b9ec9; border-radius: 6px; background: #fff; color: #1a3a5c; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .btn:hover:not(:disabled) { background: #cde7f7; }
+  .btn:disabled { opacity: 0.38; cursor: not-allowed; }
+  .btn.primary { background: #1a7ac8; color: #fff; border-color: #1260a0; }
+  .btn.primary:hover:not(:disabled) { background: #1563a8; }
+  .btn.primary:disabled { background: #aaccee; border-color: #aaccee; }
+  .btn.danger { color: #c0392b; border-color: #e07060; }
+  .btn.danger:hover:not(:disabled) { background: #fdecea; }
+  .btn.toggled { background: #1a7ac8; color: #fff; border-color: #1260a0; }
+  .btn.warn { background: #e67e22; color: #fff; border-color: #c0651a; }
+  .btn.warn:hover:not(:disabled) { background: #cf6d17; }
+  .btn.success { background: #27ae60; color: #fff; border-color: #1e8449; }
+  .btn.success:hover:not(:disabled) { background: #219a52; }
+  .btn.purple { background: #8e44ad; color: #fff; border-color: #6c3483; }
+  .btn.purple:hover:not(:disabled) { background: #7d3c98; }
+
+  .steps-bar { display: flex; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 4px; }
+  .step-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #7a9ab8; }
+  .step-circle { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #9ab8d0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; background: #fff; color: #9ab8d0; flex-shrink: 0; transition: all 0.3s; }
+  .step-line { width: 18px; height: 2px; background: #b0cfe0; flex-shrink: 0; }
+  .step-item.done .step-circle { background: #4caf50; border-color: #388e3c; color: #fff; }
+  .step-item.active .step-circle { background: #1a7ac8; border-color: #1260a0; color: #fff; }
+  .step-item.active { color: #1a3a5c; font-weight: 500; }
+  .step-item.done { color: #388e3c; }
+  .step-item.editing .step-circle { background: #e67e22; border-color: #c0651a; color: #fff; }
+  .step-item.editing { color: #7a3a00; font-weight: 500; }
+  .step-item.reserving .step-circle { background: #8e44ad; border-color: #6c3483; color: #fff; }
+  .step-item.reserving { color: #4a1a6a; font-weight: 500; }
+
+  .action-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
+  .divider { width: 1px; height: 28px; background: #b0cfe0; margin: 0 2px; }
+  .mode-hint { font-size: 12px; border-radius: 5px; padding: 6px 12px; margin-bottom: 10px; line-height: 1.5; width: 100%; }
+  .hint-normal { background: #d4f5e2; color: #1a5c3a; }
+  .hint-step1 { background: #fdecea; color: #8c1f1f; }
+  .hint-step2 { background: #e3f0ff; color: #1260a0; }
+  .hint-step3 { background: #fff3cd; color: #7a5000; }
+  .hint-done  { background: #d4f5e2; color: #1a5c3a; }
+  .hint-edit  { background: #fef3e2; color: #7a3a00; }
+  .hint-re-reserve { background: #f5eaff; color: #4a1a6a; }
+
+  .classroom-wrap { display: flex; justify-content: center; width: 100%; margin-top: 4px; }
+  .classroom-area { background: #c2e0f4; border-radius: 10px; padding: 16px 14px 14px; display: inline-block; }
+  .blackboard { background: #2d4a2d; color: #c8f0c8; text-align: center; border-radius: 6px; font-size: 13px; padding: 6px 0; margin-bottom: 8px; letter-spacing: 2px; }
+  .podium-wrap { display: flex; justify-content: center; margin-bottom: 14px; }
+  .podium { width: 160px; height: 58px; background: #8b6340; border-radius: 7px; border: 2px solid #5a3a18; display: flex; align-items: center; justify-content: center; color: #f5deb3; font-size: 13px; font-weight: 500; letter-spacing: 1px; box-shadow: 0 3px 0 #4a2e10; }
+  .teacher-label { text-align: center; font-size: 12px; color: #2a5070; margin-top: 10px; }
+
+  .seat-row-flex { display: flex; align-items: center; margin-bottom: 8px; }
+  .col-aisle { width: 20px; flex-shrink: 0; }
+  .seat-cell { width: 72px; height: 54px; background: #ffe066; border: 1.5px solid #c8a800; border-radius: 5px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; margin: 0 4px; transition: background 0.15s; text-align: center; user-select: none; position: relative; gap: 0; padding: 3px 2px; }
+  .seat-cell:hover { background: #ffd700; }
+  .seat-cell.reserved { background: #c0c0c0; border-color: #888; }
+  .seat-cell.reserved:hover { background: #a8a8a8; }
+  .seat-cell.honor-seat { background: #ffb347; border-color: #e07000; }
+  .seat-cell.occupied { background: #ffc107; }
+  .seat-cell.edit-mode { box-shadow: 0 0 0 2px #e67e22; }
+  .seat-cell.re-reserve-mode { box-shadow: 0 0 0 2px #8e44ad; }
+  .seat-cell.drag-over { box-shadow: 0 0 0 3px #1a7ac8 !important; background: #cde7f7 !important; }
+  .seat-cell.dragging { opacity: 0.45; }
+  .seat-num  { font-size: 10px; font-weight: 400; color: #7a6000; line-height: 1.2; }
+  .seat-name { font-size: 12px; font-weight: 500; color: #4a3800; line-height: 1.3; word-break: break-all; }
+  .seat-role { font-size: 10px; font-weight: 400; color: #5a2800; line-height: 1.2; }
+  .seat-cell.honor-seat .seat-num { color: #6a3000; }
+  .seat-cell.honor-seat .seat-name { color: #3a1800; }
+  .seat-cell.honor-seat .seat-role { color: #4a2000; }
+  .res-label { font-size: 11px; color: #666; }
+
+  .classroom-area.teacher-view { transform: rotate(180deg); }
+  .classroom-area.teacher-view .seat-cell { transform: rotate(180deg); }
+  .classroom-area.teacher-view .blackboard { transform: rotate(180deg); }
+  .classroom-area.teacher-view .podium { transform: rotate(180deg); }
+  .classroom-area.teacher-view .teacher-label { transform: rotate(180deg); }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal { background: #fff; border-radius: 10px; padding: 24px; max-width: 360px; width: 92%; }
+  .modal h3 { font-size: 16px; font-weight: 500; margin-bottom: 10px; color: #1a3a5c; }
+  .modal p { font-size: 13px; color: #444; margin-bottom: 16px; line-height: 1.6; }
+  .modal-btns { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+
+  @keyframes pop { 0%{transform:scale(1)} 40%{transform:scale(1.15)} 100%{transform:scale(1)} }
+</style>
+
+<div class="page">
+<div class="page-inner">
+  <h2>班級座位安排系統（黑板在上）</h2>
+
+  <!-- Excel 上傳區 -->
+  <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()"
+    ondragover="onDragOverFile(event)" ondragleave="onDragLeaveFile(event)" ondrop="onDropFile(event)">
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" onchange="handleFile(this.files[0])">
+    <div class="upload-icon">📊</div>
+    <div class="upload-title">點擊或拖曳 Excel 檔案至此</div>
+    <div class="upload-sub">支援 .xlsx、.xls、.csv 格式</div>
+    <div class="upload-hint">欄位格式：座號 ／ 姓名 ／ 身分（身分留空則視為一般學生）</div>
+    <div class="upload-status" id="uploadStatus"></div>
+  </div>
+
+  <!-- 預覽 -->
+  <div class="preview-wrap" id="previewWrap">
+    <div class="preview-title" id="previewTitle"></div>
+    <table id="previewTable"></table>
+  </div>
+
+  <div class="action-row">
+    <button class="btn primary" id="btnLoad" onclick="loadStudents()" disabled>載入名單</button>
+    <div class="divider"></div>
+    <button class="btn" id="btnTeacher" onclick="toggleTeacherView()">教師視角</button>
+    <button class="btn danger" onclick="resetAll()">重置</button>
+  </div>
+
+  <div class="steps-bar">
+    <div class="step-item" id="s1"><div class="step-circle">1</div><span>保留空位</span></div>
+    <div class="step-line"></div>
+    <div class="step-item" id="s2"><div class="step-circle">2</div><span>績優選位</span></div>
+    <div class="step-line"></div>
+    <div class="step-item" id="s3"><div class="step-circle">3</div><span>隨機填入</span></div>
+    <div class="step-line"></div>
+    <div class="step-item" id="s4"><div class="step-circle">✎</div><span>手動調整</span></div>
+    <div class="step-line"></div>
+    <div class="step-item" id="s5"><div class="step-circle">⬚</div><span>調整空位</span></div>
+    <div class="step-line"></div>
+    <div class="step-item" id="s6"><div class="step-circle">✓</div><span>確認完成</span></div>
+  </div>
+
+  <div class="action-row">
+    <button class="btn"     id="btnS1" onclick="confirmStep1()"    disabled>確認空位，下一步</button>
+    <button class="btn primary" id="btnS2" onclick="confirmStep2()" disabled>績優已選完，下一步</button>
+    <button class="btn primary" id="btnS3" onclick="doRandomAssign()" disabled>一鍵隨機填入</button>
+    <button class="btn warn"    id="btnS4" onclick="enterEditMode()"  disabled>手動調整座位</button>
+    <button class="btn purple"  id="btnS5" onclick="enterReReserve()" disabled>調整保留空位</button>
+    <button class="btn success" id="btnConfirm" onclick="showConfirmModal()" disabled>確認座位表</button>
+  </div>
+
+  <div class="mode-hint hint-normal" id="modeHint">請上傳 Excel 名單檔案。</div>
+</div>
+
+<div class="classroom-wrap">
+  <div class="classroom-area" id="classroomArea">
+    <div class="blackboard">📋 黑板</div>
+    <div class="podium-wrap"><div class="podium">講台</div></div>
+    <div id="seatGrid"></div>
+    <div class="teacher-label">▲ 講台方向</div>
+  </div>
+</div>
+</div>
+
+<div class="modal-overlay" id="confirmModal" style="display:none;">
+  <div class="modal">
+    <h3>✅ 確認座位表</h3>
+    <p id="confirmText"></p>
+    <div class="modal-btns">
+      <button class="btn" onclick="closeModal()">取消，繼續調整</button>
+      <button class="btn success" onclick="confirmFinal()">確認完成</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ROWS=6, COLS=7;
+let seats=mk2d(null), reserved=mk2d(false);
+let honorStudents=[], normalStudents=[];
+let parsedStudents=[];
+let step=0, teacherMode=false, editMode=false, reReserveMode=false;
+let dragSrc=null;
+
+function mk2d(v){ return Array.from({length:ROWS},()=>Array(COLS).fill(v)); }
+function isHonor(role){ return role && role!=='一般學生' && role!==''; }
+
+/* ── Excel 處理 ── */
+function onDragOverFile(e){ e.preventDefault(); document.getElementById('uploadArea').classList.add('drag-active'); }
+function onDragLeaveFile(e){ document.getElementById('uploadArea').classList.remove('drag-active'); }
+function onDropFile(e){
+  e.preventDefault(); document.getElementById('uploadArea').classList.remove('drag-active');
+  const f=e.dataTransfer.files[0]; if(f) handleFile(f);
+}
+
+function handleFile(file){
+  if(!file) return;
+  const ext=file.name.split('.').pop().toLowerCase();
+  if(!['xlsx','xls','csv'].includes(ext)){
+    showStatus('err','格式不支援，請上傳 .xlsx、.xls 或 .csv 檔案。'); return;
+  }
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const data=new Uint8Array(e.target.result);
+      const wb=XLSX.read(data,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      parseRows(rows, file.name);
+    } catch(err){ showStatus('err','讀取失敗：'+err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseRows(rows, filename){
+  if(!rows||rows.length<2){ showStatus('err','檔案內容為空或格式不正確。'); return; }
+
+  // 自動偵測標題列：找座號/姓名欄
+  let dataStart=0;
+  let colId=-1, colName=-1, colRole=-1;
+
+  // 嘗試前3列找標題
+  for(let r=0;r<Math.min(3,rows.length);r++){
+    const row=rows[r].map(c=>String(c).trim());
+    for(let c=0;c<row.length;c++){
+      const v=row[c];
+      if(/座號|學號|編號|no|id/i.test(v)) colId=c;
+      if(/姓名|名字|name/i.test(v)) colName=c;
+      if(/身分|職稱|角色|role|職務/i.test(v)) colRole=c;
+    }
+    if(colName>=0){ dataStart=r+1; break; }
+  }
+
+  // 若找不到標題，假設第一行是資料，欄位順序：座號,姓名,身分
+  if(colName<0){ dataStart=0; colId=0; colName=1; colRole=2; }
+
+  parsedStudents=[];
+  for(let r=dataStart;r<rows.length;r++){
+    const row=rows[r];
+    const name=String(row[colName]||'').trim();
+    if(!name) continue;
+    const id=String(row[colId]!=null?row[colId]:'').trim()||String(r-dataStart+1);
+    const role=colRole>=0?String(row[colRole]||'').trim():'';
+    parsedStudents.push({id, name, role: role||'一般學生'});
+  }
+
+  if(parsedStudents.length===0){ showStatus('err','未找到有效的學生資料，請確認欄位格式。'); return; }
+
+  showStatus('ok','✅ 已讀取「'+filename+'」，共 '+parsedStudents.length+' 位學生。');
+  showPreview(parsedStudents);
+  document.getElementById('btnLoad').disabled=false;
+}
+
+function showStatus(type, msg){
+  const el=document.getElementById('uploadStatus');
+  el.className='upload-status '+type; el.textContent=msg;
+}
+
+function showPreview(students){
+  const wrap=document.getElementById('previewWrap');
+  const tbl=document.getElementById('previewTable');
+  wrap.style.display='block';
+  const honor=students.filter(s=>isHonor(s.role)).length;
+  const normal=students.length-honor;
+  document.getElementById('previewTitle').textContent=
+    '預覽名單（績優 '+honor+' 人 ／ 一般學生 '+normal+' 人）— 顯示前 10 筆';
+  const preview=students.slice(0,10);
+  tbl.innerHTML='<tr><th>座號</th><th>姓名</th><th>身分</th></tr>'+
+    preview.map(s=>'<tr><td>'+s.id+'</td><td>'+s.name+'</td><td>'+s.role+'</td></tr>').join('');
+}
+
+function loadStudents(){
+  if(!parsedStudents.length) return;
+  honorStudents=[]; normalStudents=[];
+  seats=mk2d(null); reserved=mk2d(false); step=0; editMode=false; reReserveMode=false;
+  for(const s of parsedStudents){
+    if(isHonor(s.role)) honorStudents.push({...s}); else normalStudents.push({...s});
+  }
+  buildGrid(); step=1; setStepUI(1);
+  setBtns([true,false,false,false,false,false]);
+  setHint('【步驟一：保留空位】點選要保留的座位（可不選）。績優 '+honorStudents.length+' 人，一般學生 '+normalStudents.length+' 人。','hint-step1');
+}
+
+/* ── 座位格 ── */
+function buildGrid(){
+  const g=document.getElementById('seatGrid'); g.innerHTML='';
+  for(let i=0;i<ROWS;i++){
+    const row=document.createElement('div'); row.className='seat-row-flex';
+    for(let j=0;j<COLS;j++){
+      if(j>0){const a=document.createElement('div');a.className='col-aisle';row.appendChild(a);}
+      const cell=document.createElement('div');
+      cell.className='seat-cell'; cell.id='seat-'+i+'-'+j;
+      cell.onclick=()=>handleClick(i,j);
+      cell.addEventListener('dragstart',e=>onDragStart(e,i,j));
+      cell.addEventListener('dragover', e=>onDragOver2(e,i,j));
+      cell.addEventListener('dragleave',e=>onDragLeave2(i,j));
+      cell.addEventListener('drop',     e=>onDrop2(e,i,j));
+      cell.addEventListener('dragend',  ()=>onDragEnd2());
+      row.appendChild(cell);
+    }
+    g.appendChild(row);
+    if(i<ROWS-1){const sp=document.createElement('div');sp.style.height='6px';g.appendChild(sp);}
+  }
+  redrawAll();
+}
+
+function redrawAll(){ for(let i=0;i<ROWS;i++) for(let j=0;j<COLS;j++) redrawCell(i,j); }
+
+function redrawCell(i,j,anim){
+  const cell=document.getElementById('seat-'+i+'-'+j); if(!cell)return;
+  cell.className='seat-cell'; cell.draggable=false;
+  cell.style.transform=teacherMode?'rotate(180deg)':'';
+  cell.style.animation=''; cell.innerHTML='';
+  if(editMode&&!reserved[i][j]){cell.classList.add('edit-mode');cell.draggable=true;}
+  if(reReserveMode) cell.classList.add('re-reserve-mode');
+  if(anim){cell.style.animation='pop 0.35s ease';setTimeout(()=>{cell.style.animation='';},400);}
+  if(reserved[i][j]){
+    cell.classList.add('reserved');
+    const l=document.createElement('div');l.className='res-label';l.textContent='✕ 保留';cell.appendChild(l);
+  } else if(seats[i][j]){
+    const s=seats[i][j];
+    cell.classList.add(isHonor(s.role)?'honor-seat':'occupied');
+    const ne=document.createElement('div');ne.className='seat-num';ne.textContent=s.id;cell.appendChild(ne);
+    const nm=document.createElement('div');nm.className='seat-name';nm.textContent=s.name;cell.appendChild(nm);
+    if(isHonor(s.role)){const re=document.createElement('div');re.className='seat-role';re.textContent=s.role;cell.appendChild(re);}
+  }
+}
+
+/* ── 拖曳（座位格）── */
+function onDragStart(e,i,j){if(!editMode)return;dragSrc={i,j};document.getElementById('seat-'+i+'-'+j).classList.add('dragging');e.dataTransfer.effectAllowed='move';}
+function onDragOver2(e,i,j){if(!editMode||!dragSrc)return;e.preventDefault();e.dataTransfer.dropEffect='move';document.getElementById('seat-'+i+'-'+j).classList.add('drag-over');}
+function onDragLeave2(i,j){document.getElementById('seat-'+i+'-'+j).classList.remove('drag-over');}
+function onDrop2(e,i,j){
+  e.preventDefault();document.getElementById('seat-'+i+'-'+j).classList.remove('drag-over');
+  if(!dragSrc||reserved[i][j])return;
+  const si=dragSrc.i,sj=dragSrc.j;if(si===i&&sj===j)return;
+  const tmp=seats[i][j];seats[i][j]=seats[si][sj];seats[si][sj]=tmp;
+  redrawCell(si,sj);redrawCell(i,j,true);dragSrc=null;
+}
+function onDragEnd2(){if(dragSrc){document.getElementById('seat-'+dragSrc.i+'-'+dragSrc.j).classList.remove('dragging');dragSrc=null;}document.querySelectorAll('.drag-over').forEach(c=>c.classList.remove('drag-over'));}
+
+/* ── 點擊 ── */
+function handleClick(i,j){
+  if(reReserveMode){
+    if(seats[i][j]&&!reserved[i][j]){
+      const s=seats[i][j];
+      if(!confirm('將 ['+s.id+'] '+s.name+' 移出並保留此座位？'))return;
+      if(isHonor(s.role))honorStudents.push(s);else normalStudents.push(s);
+      seats[i][j]=null;reserved[i][j]=true;redrawCell(i,j);
+    } else if(reserved[i][j]){reserved[i][j]=false;redrawCell(i,j);}
+    else{reserved[i][j]=true;redrawCell(i,j);}
+    const cnt=reserved.flat().filter(Boolean).length;
+    setHint('【調整保留空位】已保留 '+cnt+' 個座位。完成後點「確認座位表」。','hint-re-reserve');
+    return;
+  }
+  if(step===1){
+    if(seats[i][j]){alert('此座位已有學生，無法保留。');return;}
+    reserved[i][j]=!reserved[i][j];redrawCell(i,j);
+    const cnt=reserved.flat().filter(Boolean).length;
+    setHint('【步驟一：保留空位】已保留 '+cnt+' 個。確認後點「確認空位，下一步」。','hint-step1');
+    return;
+  }
+  if(step===2){
+    if(reserved[i][j]){alert('此座位已保留。');return;}
+    if(seats[i][j]){
+      const s=seats[i][j];
+      if(isHonor(s.role)){if(!confirm('取消 '+s.name+'（'+s.role+'）的座位？'))return;honorStudents.push(s);}
+      seats[i][j]=null;redrawCell(i,j);updateStep2Hint();return;
+    }
+    if(honorStudents.length===0){alert('績優學生已全部安排！');return;}
+    let txt='選擇績優學生：\n';
+    honorStudents.forEach((s,idx)=>{txt+=idx+': ['+s.id+'] '+s.name+'（'+s.role+'）\n';});
+    const ch=parseInt(prompt(txt));
+    if(isNaN(ch)||!honorStudents[ch])return;
+    const sel=honorStudents.splice(ch,1)[0];
+    seats[i][j]=sel;redrawCell(i,j,true);updateStep2Hint();return;
+  }
+  if((step===4||step===5)&&editMode){showEditMenu(i,j);}
+}
+
+function showEditMenu(i,j){
+  if(reserved[i][j]){if(confirm('取消此保留？')){reserved[i][j]=false;redrawCell(i,j);}return;}
+  const cur=seats[i][j];
+  let others=[];
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)if((r!==i||c!==j)&&seats[r][c]&&!reserved[r][c])others.push({r,c,s:seats[r][c]});
+  let txt=(cur?'目前：['+cur.id+'] '+cur.name+'\n':'（空位）\n')+'0: 清空\n';
+  others.forEach((o,idx)=>{txt+=(idx+1)+': 與 ['+o.s.id+'] '+o.s.name+' 對調\n';});
+  const ch=parseInt(prompt(txt));
+  if(isNaN(ch))return;
+  if(ch===0){seats[i][j]=null;redrawCell(i,j);}
+  else if(others[ch-1]){const o=others[ch-1];const tmp=seats[i][j];seats[i][j]=seats[o.r][o.c];seats[o.r][o.c]=tmp;redrawCell(i,j,true);redrawCell(o.r,o.c,true);}
+}
+
+/* ── 步驟 ── */
+function updateStep2Hint(){
+  if(honorStudents.length>0)setHint('【步驟二：績優選位】剩餘 '+honorStudents.length+' 位待選位。','hint-step2');
+  else setHint('✅ 績優學生全部選位完畢！請點「績優已選完，下一步」。','hint-step2');
+}
+function confirmStep1(){step=2;setStepUI(2);setBtns([false,true,false,false,false,false]);updateStep2Hint();}
+function confirmStep2(){step=3;setStepUI(3);setBtns([false,false,true,false,false,false]);setHint('【步驟三：隨機填入】點「一鍵隨機填入」安排剩餘同學。','hint-step3');}
+function doRandomAssign(){
+  setBtns([false,false,false,false,false,false]);
+  let empty=[];
+  for(let i=0;i<ROWS;i++)for(let j=0;j<COLS;j++)if(!seats[i][j]&&!reserved[i][j])empty.push({i,j});
+  const shuffled=[...normalStudents].sort(()=>Math.random()-0.5);
+  const total=Math.min(shuffled.length,empty.length);
+  let delay=0;
+  shuffled.forEach((s,idx)=>{
+    if(idx<empty.length){
+      const pos=empty[idx];
+      setTimeout(()=>{
+        seats[pos.i][pos.j]=s;redrawCell(pos.i,pos.j,true);
+        if(idx===total-1)setTimeout(()=>{step=4;setStepUI(4);setBtns([false,false,false,true,true,true]);setHint('隨機填入完成！可手動調整、調整保留空位，或直接確認。','hint-done');},350);
+      },delay);
+      delay+=55;
+    }
+  });
+  if(total===0){step=4;setStepUI(4);setBtns([false,false,false,true,true,true]);setHint('完成！','hint-done');}
+}
+function enterEditMode(){
+  reReserveMode=false;
+  editMode=!editMode;
+  document.getElementById('btnS4').textContent=editMode?'退出調整模式':'手動調整座位';
+  if(editMode){setHint('【手動調整】拖曳互換，或點擊選擇對調。','hint-edit');setStepUI('edit');}
+  else{setHint('已退出調整模式。','hint-done');setStepUI(step);}
+  redrawAll();
+}
+function enterReReserve(){
+  editMode=false;
+  document.getElementById('btnS4').textContent='手動調整座位';
+  reReserveMode=!reReserveMode;
+  document.getElementById('btnS5').textContent=reReserveMode?'退出調整保留':'調整保留空位';
+  if(reReserveMode){step=5;setStepUI(5);setHint('【調整保留空位】點空格設保留，點保留格取消，點有人的格移出並保留。','hint-re-reserve');}
+  else{step=4;setStepUI(4);document.getElementById('btnS5').textContent='調整保留空位';setHint('已退出。','hint-done');}
+  redrawAll();
+}
+function showConfirmModal(){
+  let filled=0,empty=0,res=0;
+  for(let i=0;i<ROWS;i++)for(let j=0;j<COLS;j++){if(reserved[i][j])res++;else if(seats[i][j])filled++;else empty++;}
+  document.getElementById('confirmText').textContent='已安排學生：'+filled+' 人 ／ 保留空位：'+res+' 個 ／ 未使用空位：'+empty+' 個。確定完成並鎖定座位表嗎？';
+  document.getElementById('confirmModal').style.display='flex';
+}
+function closeModal(){document.getElementById('confirmModal').style.display='none';}
+function confirmFinal(){
+  closeModal();editMode=false;reReserveMode=false;step=6;setStepUI(6);
+  setBtns([false,false,false,false,false,false]);
+  document.getElementById('btnS4').textContent='手動調整座位';
+  document.getElementById('btnS5').textContent='調整保留空位';
+  redrawAll();setHint('🎉 座位表已確認鎖定！','hint-done');
+}
+function setStepUI(active){
+  ['s1','s2','s3','s4','s5','s6'].forEach((id,i)=>{
+    const el=document.getElementById(id);el.className='step-item';
+    if(active==='edit'){if(i===3)el.classList.add('editing');else if(i<3)el.classList.add('done');return;}
+    if(i+1<active||(i===5&&active===6))el.classList.add('done');
+    else if(i+1===active)el.classList.add('active');
+    if(active===5&&i===4)el.classList.add('reserving');
+  });
+}
+function setBtns(s){['btnS1','btnS2','btnS3','btnS4','btnS5','btnConfirm'].forEach((id,i)=>{document.getElementById(id).disabled=!s[i];});}
+function setHint(msg,cls){const h=document.getElementById('modeHint');h.className='mode-hint '+cls;h.textContent=msg;}
+function toggleTeacherView(){
+  teacherMode=!teacherMode;
+  const area=document.getElementById('classroomArea'),btn=document.getElementById('btnTeacher');
+  if(teacherMode){area.classList.add('teacher-view');btn.classList.add('toggled');btn.textContent='學生視角';}
+  else{area.classList.remove('teacher-view');btn.classList.remove('toggled');btn.textContent='教師視角';}
+  redrawAll();
+}
+function resetAll(){
+  seats=mk2d(null);reserved=mk2d(false);honorStudents=[];normalStudents=[];parsedStudents=[];
+  step=0;editMode=false;reReserveMode=false;teacherMode=false;
+  document.getElementById('classroomArea').classList.remove('teacher-view');
+  document.getElementById('btnTeacher').classList.remove('toggled');
+  document.getElementById('btnTeacher').textContent='教師視角';
+  document.getElementById('btnS4').textContent='手動調整座位';
+  document.getElementById('btnS5').textContent='調整保留空位';
+  document.getElementById('uploadStatus').className='upload-status';
+  document.getElementById('previewWrap').style.display='none';
+  document.getElementById('btnLoad').disabled=true;
+  setBtns([false,false,false,false,false,false]);
+  setStepUI(0);setHint('請上傳 Excel 名單檔案。','hint-normal');buildGrid();
+}
+buildGrid();
+</script>
